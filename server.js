@@ -21,20 +21,37 @@ mongoose.connect(process.env.DB_URL, {useNewUrlParser: true, useUnifiedTopology:
 
 const db = mongoose.connection;
 db.on('error', console.error.bind(console, 'connection error:'));
-db.
-
-once('open', function() {
+db.once('open', function() {
   console.log('Mongoose is connected')
 });
 
 app.listen(PORT, () => console.log(`listening on ${PORT}`));
+ 
+
+// Front end sends to back end one of these strings: 'Last 7 days','Last 30 days', 'Last 12 months', 'All time'
+// Back end calculates the query string array's after and before dates accordingly
+function getHistoricalCounts() {
+  
+  // Return: [{date: value, total: value, unread: value},{},{},...,{}]
+}
+
+
+function getCountInDateRange(user, startDate, endDate) {
+  return queryAPI(user, `after:${startDate} before:${endDate}`);
+}
+
+async function queryAPI(user, q) {
+  const url = `https://gmail.googleapis.com/gmail/v1/users/${user}/messages?maxResults=1000&q="${q}"`;
+  const apiResponse = await axios.get(url, { headers: {"Authorization": req.headers.authorization} });
+  return apiResponse.data.resultsSizeEstimate;
+}
 
 async function getHistory(req, res) {
   try {
     const verified = await verifyToken(req)
     if (verified) {
       console.log(verified);
-      const url = `https://gmail.googleapis.com/gmail/v1/users/${verified}/messages`;
+      const url = `https://gmail.googleapis.com/gmail/v1/users/${verified}/messages?maxResults=1000&q=""`;
       console.log('hi2')
       const data = await axios.get(url, { headers: {"Authorization": req.headers.authorization} });
       console.log(data.data.resultSizeEstimate)
