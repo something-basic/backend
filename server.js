@@ -151,8 +151,8 @@ async function postTotal(req, res) {
 
       await Total.updateOne({user: verified}, {$push:{history: totals}}, {upsert: true});
 
-      res.status(201).send(totals);
       // store counts in out database
+      res.status(201).send(totals);
     } else {
       res.status(498).send('Token expired/invalid');
     }
