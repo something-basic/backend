@@ -5,8 +5,6 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const axios = require('axios').default;
-const {OAuth2Client} = require('google-auth-library');
-const client = new OAuth2Client(process.env.CLIENT_ID);
 
 const app = express();
 app.use(cors());
@@ -15,7 +13,8 @@ app.use(express.json());
 const PORT = process.env.PORT || 3001;
 
 app.get('/test', verifyToken);
-app.get('/counts', getHistory);
+app.get('/counts', getCounts);
+app.get('/history', getHistoricalCounts);
 
 mongoose.connect(process.env.DB_URL, {useNewUrlParser: true, useUnifiedTopology: true});
 
@@ -30,14 +29,53 @@ app.listen(PORT, () => console.log(`listening on ${PORT}`));
 
 // Front end sends to back end one of these strings: 'Last 7 days','Last 30 days', 'Last 12 months', 'All time'
 // Back end calculates the query string array's after and before dates accordingly
-function getHistoricalCounts() {
+async function getHistoricalCounts(req, res) {
   
-  // Return: [{date: value, total: value, unread: value},{},{},...,{}]
+  const verified = verifyToken(req);
+  // Make array of dates
+  try {
+    
+    if(verified) {
+      const dateNow = Date.now(); // A Number representing the milliseconds elapsed since the UNIX epoch.
+      const millisecondsPerDay = 1000*60*60*24;
+      const millisecondsArray = [];
+      for (let i = 0; i < 7; i++) {
+        millisecondsArray.push(dateNow - millisecondsPerDay);
+      }
+      
+      // Google API expects seconds from UNIX epoch. Convert from milliseconds to seconds.
+      const secondsArray = millisecondsArray.map( date => date/1000 );
+    
+      // Get resultsSizeEstimate for each date in array of dates. Range is
+      // const countsArray = [];
+      // for (let i = 0; i < millisecondsArray.length - 1; i++) {
+      //   const startDate = millisecondsArray[i];
+      //   const endDate = millisecondsArray[i+1];
+      //   getCountInDateRange(user, startDate, endDate);
+      // }
+      
+      const values = await Promise.all([getCountInDateRange(user, secondsArray[6], secondsArray[5]), getCountInDateRange(user, secondsArray[5], secondsArray[4])]);
+    
+      // Return: [{date: value, total: value, unread: value},{},{},...,{}]
+      return values;
+    } else {
+      res.status(404).send('IT NOT WORK  ¯\_(ツ)_/¯ ');
+    }
+
+  } catch (e) {
+    console.error(e)
+    res.status(500).send('HISTORY NOT FOUND')
+  }
+
 }
 
-
-function getCountInDateRange(user, startDate, endDate) {
-  return queryAPI(user, `after:${startDate} before:${endDate}`);
+async function getCountInDateRange(user, startDate, endDate) {
+  const dayObj = {
+    date: startDate,
+    total: await queryAPI(user, `after:${startDate} before:${endDate}`),
+    unread: await queryAPI(user, `after:${startDate} before:${endDate} is:unread`)
+  }
+  return dayObj;
 }
 
 async function queryAPI(user, q) {
@@ -46,22 +84,23 @@ async function queryAPI(user, q) {
   return apiResponse.data.resultsSizeEstimate;
 }
 
-async function getHistory(req, res) {
+async function getCounts(req, res) {
   try {
     const verified = await verifyToken(req)
     if (verified) {
       console.log(verified);
       const url = `https://gmail.googleapis.com/gmail/v1/users/${verified}/messages?maxResults=1000&q=""`;
       console.log('hi2')
-      const data = await axios.get(url, { headers: {"Authorization": req.headers.authorization} });
-      console.log(data.data.resultSizeEstimate)
-      res.status(200).send('hi')
+      const data = await axios.get(url, { headers: {Authorization: req.headers.authorization} });
+      console.log(`${data.data.resultSizeEstimate}`)
+      res.status(200).send(`${data.data.resultSizeEstimate}`)
     } else {
       res.status(404).send('IT NOT WORK  ¯\_(ツ)_/¯ ')
     }
     
   } catch (e) {
-    res.status(500).send('HISTORY NOT FOUND')
+    console.error(e)
+    res.status(500).send('COUNTS NOT FOUND')
   }
 }
 
