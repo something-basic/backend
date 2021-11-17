@@ -13,8 +13,10 @@ app.use(express.json());
 const PORT = process.env.PORT || 3001;
 
 app.get('/test', verifyToken);
-app.get('/counts', getCounts);
 app.get('/history', getHistoricalCounts);
+app.get('/total', getTotal);
+app.post('/total', postTotal);
+app.delete('/total', deleteTotal);
 
 mongoose.connect(process.env.DB_URL, {useNewUrlParser: true, useUnifiedTopology: true});
 
@@ -84,8 +86,9 @@ async function getHistoricalCounts(req, res) {
 }
 
 async function getBinData(user, beforeDate, afterDate, req) {
-  const total = getGMailData(user, `after:${afterDate} before:${beforeDate}`, req);
-  const unread = getGMailData(user, `after:${afterDate} before:${beforeDate} is:unread`, req);
+  const total = getGMailData(user, `after:${afterDate} before:${beforeDate} -"unsubscribe"`, req);
+  const unread = getGMailData(user, `after:${afterDate} before:${beforeDate} is:unread -"unsubscribe"`, req);
+
   const counts = await Promise.all([total, unread]);
 
   const binResults = {
@@ -114,22 +117,55 @@ async function getGMailData(user, q, req, count = 0) {
   }
 }
 
-async function getCounts(req, res) {
+async function getTotal(req, res) {
   try {
-    const verified = await verifyToken(req);
+    const verified =  await verifyToken(req);
     if (verified) {
-      const url = `https://gmail.googleapis.com/gmail/v1/users/${verified}/messages?maxResults=500&q=""`;
-      const data = await axios.get(url, { headers: {Authorization: req.headers.authorization} });
-      res.status(200).send(`${data.data.resultSizeEstimate}`);
+      let dbUser = await Total.find({user:verified});
+      res.status(200).send(dbUser);
     } else {
       res.status(498).send('Token expired/invalid');
     }
-    
   } catch (e) {
-    console.error(e);
-    res.status(500).send('COUNTS NOT FOUND');
+        console.error(e);
+    res.status(500).send('Internal server error');
   }
 }
+
+async function postTotal(req, res) {
+  try {
+    const verified =  await verifyToken(req);
+    if (verified) {
+      // get gmail total counts
+      const getGmailTotal = getGMailData(verified, '-"unsubscribe"', req);
+      const getGmailUnreadTotal = getGMailData(verified, 'is:unread -"unsubscribe"', req);
+
+      const totals = await Promise.all([getGmailTotal, getGmailUnreadTotal]);
+      res.status(201).send(totals);
+      // store counts in out database
+    } else {
+      res.status(498).send('Token expired/invalid');
+    }
+  } catch (e) {
+    console.error(e);
+    res.status(500).send('Internal server error');
+  }
+}
+
+async function deleteTotal(req, res) {
+  try {
+    const verified =  await verifyToken(req);
+    if (verified) {
+
+    } else {
+      res.status(498).send('Token expired/invalid');
+    }
+  } catch (e) {
+    console.error(e);
+    res.status(500).send('Internal server error');
+  }
+}
+
 
 async function verifyToken(req) {
   try {
