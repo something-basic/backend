@@ -32,32 +32,30 @@ app.listen(PORT, () => console.log(`listening on ${PORT}`));
 async function getHistoricalCounts(req, res) {
   
   const verified =  await verifyToken(req);
-  // Make array of dates
+
   try {
-    
+
     if(verified) {
-      const dateNow = Date.now(); // A Number representing the milliseconds elapsed since the UNIX epoch.
-      const millisecondsPerDay = 1000*60*60*24;
-      const millisecondsArray = [];
-      for (let i = 0; i < 7; i++) {
-        millisecondsArray.push(dateNow - millisecondsPerDay * i);
+      const dateNow = Date.now()/1000; // Gmail API uses seconds elapsed since the UNIX epoch.
+      const secondsPerDay = 60*60*24;
+      const secondsArray = [];
+      for (let i = 0; i <= 7; i++) {
+        secondsArray.push(Math.round(dateNow - secondsPerDay * i));
       }
-      
-      // Google API expects seconds from UNIX epoch. Convert from milliseconds to seconds.
-      const secondsArray = millisecondsArray.map( date => Math.round(date/1000) );
     
       // Get resultsSizeEstimate for each date in array of dates. Range is
-      // const countsArray = [];
-      // for (let i = 0; i < millisecondsArray.length - 1; i++) {
-      //   const startDate = millisecondsArray[i];
-      //   const endDate = millisecondsArray[i+1];
-      //   getCountInDateRange(user, startDate, endDate);
-      // }
+      let binResults = [];
+      for (let i = 0; i < secondsArray.length - 1; i++) {
+        const beforeDate = secondsArray[i];
+        const afterDate = secondsArray[i+1];
+        //console.log(beforeDate, afterDate);
+        binResults.push(getCountInDateRange(verified, beforeDate, afterDate, req));
+      }
       
-      const values = await Promise.all([getCountInDateRange(verified, secondsArray[6], secondsArray[5], req), getCountInDateRange(verified, secondsArray[5], secondsArray[4], req)]);
-      // const values = await getCountInDateRange(verified, secondsArray[1], secondsArray[0], req);
-      // Return: [{date: value, total: value, unread: value},{},{},...,{}]
-      res.status(200).send(values);
+      const values = await Promise.all(binResults);
+      console.log(values)
+
+      res.status(200).send(values);   // Returns array of objects: [{date: value, total: value, unread: value},{},{},...,{}]
     } else {
       res.status(404).send('IT NOT WORK  ¯\_(ツ)_/¯ ');
     }
@@ -69,17 +67,16 @@ async function getHistoricalCounts(req, res) {
 
 }
 
-async function getCountInDateRange(user, startDate, endDate, req) {
-
-  const total = await queryAPI(user, `after:${startDate} before:${endDate}`, req);
-  const unread = await queryAPI(user, `after:${startDate} before:${endDate} is:unread`, req);
+async function getCountInDateRange(user, beforeDate, afterDate, req) {
+  console.log(user, beforeDate, afterDate);
+  const total = await queryAPI(user, `after:${afterDate} before:${beforeDate}`, req);
+  const unread = await queryAPI(user, `after:${afterDate} before:${beforeDate} is:unread`, req);
   
   const dayObj = {
-    date: startDate,
+    date: beforeDate*1000,  // ChartJS uses timestamps in milliseconds since UNIX epoch
     total: total,
     unread: unread
   }
-  console.log(dayObj);
   return dayObj;
 }
 
