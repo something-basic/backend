@@ -123,7 +123,7 @@ async function getTotal(req, res) {
     const verified =  await verifyToken(req);
     if (verified) {
       let dbUser = await Total.find({user:verified});
-      res.status(200).send(dbUser);
+      res.status(200).send(dbUser[0].history);
     } else {
       res.status(498).send('Token expired/invalid');
     }
