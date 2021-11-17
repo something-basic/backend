@@ -53,8 +53,8 @@ async function getHistoricalCounts(req, res) {
         binCount: 12 // 12 months
       },{
         binOption: 'Last 5 years',
-        binSize: 60*60*24 * 30, // 1 month represented in seconds
-        binCount: 60 // 60 months
+        binSize: 60*60*24 * 120, // 1 month represented in seconds
+        binCount: 15 // 60 months
       }];
 
       // Create array of dates that represents the bins
