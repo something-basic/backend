@@ -5,6 +5,7 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const axios = require('axios').default;
+const Total = require('./totalModel.js');
 
 const app = express();
 app.use(cors());
@@ -137,10 +138,19 @@ async function postTotal(req, res) {
     const verified =  await verifyToken(req);
     if (verified) {
       // get gmail total counts
-      const getGmailTotal = getGMailData(verified, '-"unsubscribe"', req);
+      const getGmailReadTotal = getGMailData(verified, 'is:read -"unsubscribe"', req);
       const getGmailUnreadTotal = getGMailData(verified, 'is:unread -"unsubscribe"', req);
+      
+      const counts = await Promise.all([getGmailReadTotal, getGmailUnreadTotal]);
 
-      const totals = await Promise.all([getGmailTotal, getGmailUnreadTotal]);
+      const totals = {
+        date: Date.now(),  // Date is represented as milliseconds since UNIX epoch to match ChartJS timestamps.
+        total: counts[0] + counts[1],
+        unread: counts[1]
+      }
+
+      await Total.updateOne({user: verified}, {$push:{history: totals}}, {upsert: true});
+
       res.status(201).send(totals);
       // store counts in out database
     } else {
