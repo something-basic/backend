@@ -19,6 +19,7 @@ app.get('/total', getTotal);
 app.post('/total', postTotal);
 app.delete('/total', deleteTotal);
 app.get('/unsub', (req, res) => getHistoricalCounts(req, res, 'unsub'));
+app.get('/senders', getSenders);
 
 mongoose.connect(process.env.DB_URL, {useNewUrlParser: true, useUnifiedTopology: true});
 
@@ -30,13 +31,70 @@ db.once('open', function() {
 
 app.listen(PORT, () => console.log(`Listening on ${PORT}`));
 
+async function getSenders(req, res) {
+  try {
+    const verified = await verifyToken(req);
+
+    if (verified) {
+
+      // First get most recent 500 messages that do not contain the word unsubscribe. Includes both read and unread emails.
+      const q = `in:inbox label:unread -"unsubscribe"`;
+      const url = `https://gmail.googleapis.com/gmail/v1/users/${verified}/messages?maxResults=250&q=${q}`;
+      const apiResponse = await axios.get(url, { headers: {"Authorization": req.headers.authorization} });
+
+      // Separate the up to 250 results into 25 simultaneous gmail API query streams of 10 messages each. Fewer than 500 is okay too.
+      // Estimated quota consumption: 25 requests/second * 5 quotas/request = 125 quotas per second for 10 seconds, worst case.
+      let sendersArrays = [];
+      const batchSize = 10;
+      for (let i = 0; i < apiResponse.data.messages.length; i = i + batchSize) {
+        let slicedMessageList = [...apiResponse.data.messages.slice(i, i + batchSize)];
+        sendersArrays.push(getSendersSliced(verified, slicedMessageList, req));
+      }
+      const arrays = await Promise.all(sendersArrays);
+      const unslicedSenders = arrays.reduce( (prev, array) => [...prev, ...array], [] );
+      const uniqueSenders = [...new Set(unslicedSenders)];
+      const senders = uniqueSenders.map( sender => ({ 
+        sender: sender,
+        count: unslicedSenders.reduce( (prev, curr) => curr.toLowerCase() === sender.toLowerCase() ? 
+          prev + 1 :
+          prev, 0
+        )
+      }) );
+      res.status(200).send(senders.sort( (a, b) => b.count - a.count ))
+
+    } else {
+      res.status(498).send('Token expired/invalid');
+    }
+  } catch {
+    console.error('Error in getSenders. Error trace not logged for privacy concerns.');
+    res.status(500).send('Internal server error');
+  }
+}
+
+async function getSendersSliced(verified, slicedMessageList, req) {
+  // For each message, get the contents of it and see whether it's read/unread and who it is from
+  let senders = [];
+  for (const message of slicedMessageList) {
+    const url = `https://gmail.googleapis.com/gmail/v1/users/${verified}/messages/${message.id}`;
+    try {
+      const apiResponse = await axios.get(url, { headers: {"Authorization": req.headers.authorization} });
+      const sender = apiResponse.data.payload.headers.filter( header => header.name.toLowerCase() === 'from' && header.value)[0].value;
+      senders.push(sender);
+    } catch {
+      console.error('Error in getSendersSliced. Error trace not logged for privacy concerns.');
+      continue;
+    }
+  }
+  return senders;
+}
+
 // Returns an array of objects containing the bin start date, total email count, and unread email count: [{date: 1484195670, total: 456, unread: 123}]
 // Request query from frontend should contain one of these strings: 'Last 7 days','Last 30 days', 'Last 12 months', 'All time'. Eg: "/history?binOption=Last 7 days"
 async function getHistoricalCounts(req, res, route) {
   try {
     const verified =  await verifyToken(req);
 
-    if(verified) {
+    if (verified) {
       const dateNow = Date.now()/1000; // Seconds elapsed since UNIX epoch to match Gmail API expectation.
 
       // Frontend must select one of these 4 binOption strings via query when getting history data. Eg: "/history?binOption=Last 7 days"
