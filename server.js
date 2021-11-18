@@ -14,10 +14,11 @@ app.use(express.json());
 const PORT = process.env.PORT || 3001;
 
 app.get('/test', verifyToken);
-app.get('/history', getHistoricalCounts);
+app.get('/history', (req, res) => getHistoricalCounts(req, res, 'history'));
 app.get('/total', getTotal);
 app.post('/total', postTotal);
 app.delete('/total', deleteTotal);
+app.get('/unsub', (req, res) => getHistoricalCounts(req, res, 'unsub'));
 
 mongoose.connect(process.env.DB_URL, {useNewUrlParser: true, useUnifiedTopology: true});
 
@@ -31,7 +32,7 @@ app.listen(PORT, () => console.log(`Listening on ${PORT}`));
 
 // Returns an array of objects containing the bin start date, total email count, and unread email count: [{date: 1484195670, total: 456, unread: 123}]
 // Request query from frontend should contain one of these strings: 'Last 7 days','Last 30 days', 'Last 12 months', 'All time'. Eg: "/history?binOption=Last 7 days"
-async function getHistoricalCounts(req, res) {
+async function getHistoricalCounts(req, res, route) {
   try {
     const verified =  await verifyToken(req);
 
@@ -69,7 +70,7 @@ async function getHistoricalCounts(req, res) {
       for (let i = 0; i < datesArray.length - 1; i++) {
         const beforeDate = datesArray[i];
         const afterDate = datesArray[i+1];
-        binResults.push(getBinData(verified, beforeDate, afterDate, req));  // Get gmail data for each bin simultaneously. Drops query time from ~17s to ~1s for 60 bins.
+        binResults.push(getBinData(verified, beforeDate, afterDate, req, route));  // Get gmail data for each bin simultaneously. Drops query time from ~17s to ~1s for 60 bins.
       }
       
       const values = await Promise.all(binResults);
@@ -86,19 +87,34 @@ async function getHistoricalCounts(req, res) {
 
 }
 
-async function getBinData(user, beforeDate, afterDate, req) {
-  const total = getGMailData(user, `after:${afterDate} before:${beforeDate} -"unsubscribe"`, req);
-  const unread = getGMailData(user, `after:${afterDate} before:${beforeDate} is:unread -"unsubscribe"`, req);
+async function getBinData(user, beforeDate, afterDate, req, route) {
 
-  const counts = await Promise.all([total, unread]);
+  if (route === 'history') {
+    const total = getGMailData(user, `after:${afterDate} before:${beforeDate} -"unsubscribe"`, req);
+    const unread = getGMailData(user, `after:${afterDate} before:${beforeDate} is:unread -"unsubscribe"`, req);
 
-  const binResults = {
-    date: beforeDate*1000,  // Date is represented as milliseconds since UNIX epoch to match ChartJS timestamps.
-    total: counts[0],
-    unread: counts[1]
+    const counts = await Promise.all([total, unread]);
+
+    const binResults = {
+      date: beforeDate*1000,  // Date is represented as milliseconds since UNIX epoch to match ChartJS timestamps.
+      total: counts[0],
+      unread: counts[1]
+    }
+    return binResults;  // Returns object, eg: {date: 1484195670, total: 456, unread: 123}
+  } else {
+    
+    const total = getGMailData(user, `after:${afterDate} before:${beforeDate}`, req);
+    const unsubscribe = getGMailData(user, `after:${afterDate} before:${beforeDate} "unsubscribe"`, req);
+
+    const counts = await Promise.all([total, unsubscribe]);
+
+    const binResults = {
+      date: beforeDate*1000,  // Date is represented as milliseconds since UNIX epoch to match ChartJS timestamps.
+      total: counts[0],
+      unsubscribe: counts[1]
+    }
+    return binResults;  // Returns object, eg: {date: 1484195670, total: 456, unread: 123}
   }
-
-  return binResults;  // Returns object, eg: {date: 1484195670, total: 456, unread: 123}
 }
 
 async function getGMailData(user, q, req, count = 0) {
@@ -165,17 +181,18 @@ async function postTotal(req, res) {
 async function deleteTotal(req, res) {
   try {
     const verified =  await verifyToken(req);
+    
     if (verified) {
-
+      const result = await Total.deleteMany({user: verified});
+      res.status(200).send(`Number of entries deleted (should be one): ${result.deletedCount}`)
     } else {
-      res.status(498).send('Token expired/invalid');
+      res.status(400).send('Not deleted');
     }
   } catch (e) {
     console.error(e);
     res.status(500).send('Internal server error');
   }
 }
-
 
 async function verifyToken(req) {
   try {
