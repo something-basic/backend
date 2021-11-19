@@ -148,8 +148,8 @@ async function getHistoricalCounts(req, res, route) {
 async function getBinData(user, beforeDate, afterDate, req, route) {
 
   if (route === 'history') {
-    const total = getGMailData(user, `after:${afterDate} before:${beforeDate} -"unsubscribe"`, req);
-    const unread = getGMailData(user, `after:${afterDate} before:${beforeDate} is:unread -"unsubscribe"`, req);
+    const total = getGMailData(user, `in:inbox after:${afterDate} before:${beforeDate} -"unsubscribe"`, req);
+    const unread = getGMailData(user, `in:inbox after:${afterDate} before:${beforeDate} is:unread -"unsubscribe"`, req);
 
     const counts = await Promise.all([total, unread]);
 
@@ -161,8 +161,8 @@ async function getBinData(user, beforeDate, afterDate, req, route) {
     return binResults;  // Returns object, eg: {date: 1484195670, total: 456, unread: 123}
   } else {
     
-    const total = getGMailData(user, `after:${afterDate} before:${beforeDate}`, req);
-    const unsubscribe = getGMailData(user, `after:${afterDate} before:${beforeDate} "unsubscribe"`, req);
+    const total = getGMailData(user, `in:inbox after:${afterDate} before:${beforeDate}`, req);
+    const unsubscribe = getGMailData(user, `in:inbox after:${afterDate} before:${beforeDate} "unsubscribe"`, req);
 
     const counts = await Promise.all([total, unsubscribe]);
 
@@ -212,8 +212,8 @@ async function postTotal(req, res) {
     const verified =  await verifyToken(req);
     if (verified) {
       // get gmail total counts
-      const getGmailReadTotal = getGMailData(verified, 'is:read -"unsubscribe"', req);
-      const getGmailUnreadTotal = getGMailData(verified, 'is:unread -"unsubscribe"', req);
+      const getGmailReadTotal = getGMailData(verified, 'in:inbox is:read -"unsubscribe"', req);
+      const getGmailUnreadTotal = getGMailData(verified, 'in:inbox is:unread -"unsubscribe"', req);
       
       const counts = await Promise.all([getGmailReadTotal, getGmailUnreadTotal]);
 
