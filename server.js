@@ -210,22 +210,20 @@ async function getTotal(req, res) {
 async function postTotal(req, res) {
   try {
     const verified =  await verifyToken(req);
+
     if (verified) {
       // get gmail total counts
-      const getGmailReadTotal = getGMailData(verified, 'in:inbox is:read -"unsubscribe"', req);
-      const getGmailUnreadTotal = getGMailData(verified, 'in:inbox is:unread -"unsubscribe"', req);
-      
-      const counts = await Promise.all([getGmailReadTotal, getGmailUnreadTotal]);
+      const url = `https://gmail.googleapis.com/gmail/v1/users/${verified}/labels/INBOX`;
+      const apiResponse = await axios.get(url, { headers: {"Authorization": req.headers.authorization } });
 
       const totals = {
         date: Date.now(),  // Date is represented as milliseconds since UNIX epoch to match ChartJS timestamps.
-        total: counts[0] + counts[1],
-        unread: counts[1]
+        total: apiResponse.data.messagesTotal,
+        unread: apiResponse.data.messagesUnread
       }
 
       await Total.updateOne({user: verified}, {$push:{history: totals}}, {upsert: true});
 
-      // store counts in out database
       res.status(201).send(totals);
     } else {
       res.status(498).send('Token expired/invalid');
